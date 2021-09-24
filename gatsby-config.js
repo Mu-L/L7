@@ -182,6 +182,14 @@ module.exports = {
           en: 'Component'
         },
         order: 6
+      },
+      {
+        slug: 'api/renderer',
+        title: {
+          zh: '第三方引擎接入',
+          en: 'import other gl'
+        },
+        order: 3
       }
     ],
     examples: [
@@ -268,7 +276,7 @@ module.exports = {
       }
     ],
     playground: {
-      container: '<div style="min-height: 500px; justify-content: center; position: relative" id="map"/>',
+      container: '<div style="justify-content: center; position: relative" id="map"/>',
       dependencies: {
         '@antv/l7': 'latest',
         '@antv/l7-maps': 'latest'

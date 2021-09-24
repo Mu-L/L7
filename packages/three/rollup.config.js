@@ -26,7 +26,11 @@ export default {
       namedExports: {
         eventemitter3: [ 'EventEmitter' ],
         lodash: [ 'merge' ]
-      }
+        // inversify: [ 'inject', 'injectable' ]
+      },
+      dynamicRequireTargets: [
+        'node_modules/inversify/lib/syntax/binding_{on,when}_syntax.js'
+      ]
     }),
     buble({
       transforms: { generator: false }
@@ -34,7 +38,9 @@ export default {
     terser()
   ],
   external: [
-    '@antv/l7'
+    '@antv/l7-core',
+    '@antv/l7-scene',
+    '@antv/l7-layers'
   ],
   output: [
     {

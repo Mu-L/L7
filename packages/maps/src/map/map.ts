@@ -7,7 +7,6 @@ import {
   ICoordinateSystemService,
   IGlobalConfigService,
   ILngLat,
-  ILogService,
   IMapConfig,
   IMapService,
   IMercator,
@@ -22,7 +21,8 @@ import { Map } from '@antv/l7-map';
 import { DOM } from '@antv/l7-utils';
 import { mat4, vec2, vec3 } from 'gl-matrix';
 import { inject, injectable } from 'inversify';
-
+import 'reflect-metadata';
+import { Version } from '../version';
 import Viewport from './Viewport';
 const EventMap: {
   [key: string]: any;
@@ -40,6 +40,7 @@ const LNGLAT_OFFSET_ZOOM_THRESHOLD = 12;
  */
 @injectable()
 export default class L7MapService implements IMapService<Map> {
+  public version: string = Version.L7MAP;
   public map: Map;
 
   @inject(TYPES.MapConfig)
@@ -48,8 +49,6 @@ export default class L7MapService implements IMapService<Map> {
   @inject(TYPES.IGlobalConfigService)
   private readonly configService: IGlobalConfigService;
 
-  @inject(TYPES.ILogService)
-  private readonly logger: ILogService;
   @inject(TYPES.ICoordinateSystemService)
   private readonly coordinateSystemService: ICoordinateSystemService;
 
@@ -280,6 +279,9 @@ export default class L7MapService implements IMapService<Map> {
   }
 
   public destroy() {
+    // TODO: 销毁地图可视化层的容器
+    this.$mapContainer?.parentNode?.removeChild(this.$mapContainer);
+
     this.eventEmitter.removeAllListeners();
     if (this.map) {
       this.map.remove();

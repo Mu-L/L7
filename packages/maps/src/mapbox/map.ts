@@ -7,7 +7,6 @@ import {
   ICoordinateSystemService,
   IGlobalConfigService,
   ILngLat,
-  ILogService,
   IMapConfig,
   IMapService,
   IMercator,
@@ -22,10 +21,11 @@ import { DOM } from '@antv/l7-utils';
 import { mat4, vec2, vec3 } from 'gl-matrix';
 import { inject, injectable } from 'inversify';
 import mapboxgl, { IControl, Map } from 'mapbox-gl';
-
 // tslint:disable-next-line:no-submodule-imports
 import 'mapbox-gl/dist/mapbox-gl.css';
+import 'reflect-metadata';
 import { IMapboxInstance } from '../../typings/index';
+import { Version } from '../version';
 import Viewport from './Viewport';
 window.mapboxgl = mapboxgl;
 const EventMap: {
@@ -40,13 +40,14 @@ import { MapTheme } from './theme';
 let mapdivCount = 0;
 const LNGLAT_OFFSET_ZOOM_THRESHOLD = 12;
 const MAPBOX_API_KEY =
-  'pk.eyJ1IjoibHp4dWUiLCJhIjoiYnhfTURyRSJ9.Ugm314vAKPHBzcPmY1p4KQ';
+  'pk.eyJ1IjoibHp4dWUiLCJhIjoiY2tvaWZuM2s4MWZuYjJ1dHI5ZGduYTlrdiJ9.DQCfMRbZzx0VSwecQ69McA';
 /**
  * AMapService
  */
 @injectable()
 export default class MapboxService
   implements IMapService<Map & IMapboxInstance> {
+  public version: string = Version.MAPBOX;
   public map: Map & IMapboxInstance;
 
   @inject(TYPES.MapConfig)
@@ -55,8 +56,6 @@ export default class MapboxService
   @inject(TYPES.IGlobalConfigService)
   private readonly configService: IGlobalConfigService;
 
-  @inject(TYPES.ILogService)
-  private readonly logger: ILogService;
   @inject(TYPES.ICoordinateSystemService)
   private readonly coordinateSystemService: ICoordinateSystemService;
 
@@ -237,6 +236,21 @@ export default class MapboxService
   public lngLatToContainer(lnglat: [number, number]): IPoint {
     return this.map.project(lnglat);
   }
+
+  /**
+   * 将经纬度转成墨卡托坐标
+   * @param lnglat
+   * @returns
+   */
+  public lngLatToCoord(
+    lnglat: [number, number],
+    origin: IMercator = { x: 0, y: 0, z: 0 },
+  ) {
+    // @ts-ignore
+    const { x, y } = this.lngLatToMercator(lnglat, 0);
+    return [x - origin.x, y - origin.y] as [number, number];
+  }
+
   public lngLatToMercator(
     lnglat: [number, number],
     altitude: number,
@@ -307,7 +321,7 @@ export default class MapboxService
     // 判断全局 mapboxgl 对象的加载
     if (!mapInstance && !window.mapboxgl) {
       // 用户有时传递进来的实例是继承于 mapbox 实例化的，不一定是 mapboxgl 对象。
-      this.logger.error(this.configService.getSceneWarninfo('SDK'));
+      console.error(this.configService.getSceneWarninfo('SDK'));
     }
 
     if (
@@ -316,7 +330,7 @@ export default class MapboxService
       !window.mapboxgl.accessToken &&
       !mapInstance // 如果用户传递了 mapInstance，应该不去干预实例的 accessToken。
     ) {
-      this.logger.warn(this.configService.getSceneWarninfo('MapToken'));
+      console.warn(this.configService.getSceneWarninfo('MapToken'));
     }
 
     // 判断是否设置了 accessToken
@@ -348,6 +362,9 @@ export default class MapboxService
   }
 
   public destroy() {
+    // TODO: 销毁地图可视化层的容器
+    this.$mapContainer?.parentNode?.removeChild(this.$mapContainer);
+
     this.eventEmitter.removeAllListeners();
     if (this.map) {
       this.map.remove();
@@ -393,8 +410,10 @@ export default class MapboxService
       cameraHeight: 0,
     });
 
+    const { offsetZoom = LNGLAT_OFFSET_ZOOM_THRESHOLD } = this.config;
+
     // set coordinate system
-    if (this.viewport.getZoom() > LNGLAT_OFFSET_ZOOM_THRESHOLD) {
+    if (this.viewport.getZoom() > offsetZoom) {
       this.coordinateSystemService.setCoordinateSystem(
         CoordinateSystem.LNGLAT_OFFSET,
       );

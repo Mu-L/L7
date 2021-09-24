@@ -9,7 +9,7 @@ order: 1
 
 ### 数据
 
-绘制弧线只需提供起止点坐标即可
+绘制弧线只需提供起止点坐标即可（起止点调换位置，弧线的形状会对称相反，飞线动画的方向也会相反）
 
 ```javascript
 source(data, {
@@ -79,6 +79,31 @@ const layer = new LineLayer({})
   .color('#8C1EB2')
   .style({
     opacity: 0.8,
+  });
+```
+
+### 设置渐变色
+
+线图层通过在 style 中设置起始颜色和终点颜色来设置颜色渐变，渐变色的优先级比 color 方法设置的颜色更高
+
+
+```javascript
+const layer = new LineLayer({})
+  .source(data, {
+    parser: {
+      type: 'csv',
+      x: 'lng1',
+      y: 'lat1',
+      x1: 'lng2',
+      y1: 'lat2',
+    },
+  })
+  .size(1)
+  .shape('arc')
+  .color('#8C1EB2')
+  .style({
+    sourceColor: '#f00',  // 起点颜色
+    targetColor: '#0f0'   // 终点颜色
   });
 ```
 

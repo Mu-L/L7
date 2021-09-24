@@ -28,6 +28,7 @@ import { getParser, getTransform } from './';
 import { cluster } from './transform/cluster';
 import { statMap } from './utils/statistics';
 import { getColumn } from './utils/util';
+
 function mergeCustomizer(objValue: any, srcValue: any) {
   if (Array.isArray(srcValue)) {
     return srcValue;
@@ -54,6 +55,9 @@ export default class Source extends EventEmitter {
     zoom: -99,
     method: 'count',
   };
+  private readonly mapService: IMapService;
+  // 是否有效范围
+  private invalidExtent: boolean = false;
 
   // 原始数据
   private originData: any;
@@ -66,7 +70,6 @@ export default class Source extends EventEmitter {
     super();
     // this.rawData = cloneDeep(data);
     this.originData = data;
-
     this.initCfg(cfg);
 
     this.hooks.init.tap('parser', () => {
@@ -89,16 +92,15 @@ export default class Source extends EventEmitter {
     this.emit('update');
   }
   public getClusters(zoom: number): any {
-    return this.clusterIndex.getClusters(this.extent, zoom);
+    return this.clusterIndex.getClusters(this.caculClusterExtent(2), zoom);
   }
   public getClustersLeaves(id: number): any {
     return this.clusterIndex.getLeaves(id, Infinity);
   }
   public updateClusterData(zoom: number): void {
     const { method = 'sum', field } = this.clusterOptions;
-    const newBounds = padBounds(bBoxToBounds(this.extent), 2);
     let data = this.clusterIndex.getClusters(
-      newBounds[0].concat(newBounds[1]),
+      this.caculClusterExtent(2),
       Math.floor(zoom),
     );
     this.clusterOptions.zoom = zoom;
@@ -169,6 +171,18 @@ export default class Source extends EventEmitter {
     this.data = null;
   }
 
+  private caculClusterExtent(bufferRatio: number): any {
+    let newBounds = [
+      [-Infinity, -Infinity],
+      [Infinity, Infinity],
+    ];
+
+    if (!this.invalidExtent) {
+      newBounds = padBounds(bBoxToBounds(this.extent), bufferRatio);
+    }
+    return newBounds[0].concat(newBounds[1]);
+  }
+
   private initCfg(option?: ISourceCFG) {
     this.cfg = mergeWith(this.cfg, option, mergeCustomizer);
     const cfg = this.cfg;
@@ -196,6 +210,8 @@ export default class Source extends EventEmitter {
     this.data = sourceParser(this.originData, parser);
     // 计算范围
     this.extent = extent(this.data.dataArray);
+    this.invalidExtent =
+      this.extent[0] === this.extent[2] || this.extent[1] === this.extent[3];
   }
   /**
    * 数据统计
@@ -204,6 +220,7 @@ export default class Source extends EventEmitter {
     const trans = this.transforms;
     trans.forEach((tran: ITransform) => {
       const { type } = tran;
+
       const data = getTransform(type)(this.data, tran);
       Object.assign(this.data, data);
     });

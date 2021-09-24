@@ -1,24 +1,31 @@
 import {
   IEncodeFeature,
+  IFontService,
   IGlobalConfigService,
   ILayer,
   ILayerPlugin,
-  ILogService,
+  ILngLat,
+  IMapService,
   IParseDataItem,
   IStyleAttribute,
   IStyleAttributeService,
   TYPES,
 } from '@antv/l7-core';
-import { rgb2arr } from '@antv/l7-utils';
+import { rgb2arr, unProjectFlat } from '@antv/l7-utils';
 import { inject, injectable } from 'inversify';
+import { cloneDeep } from 'lodash';
+import 'reflect-metadata';
 
 @injectable()
 export default class DataMappingPlugin implements ILayerPlugin {
   @inject(TYPES.IGlobalConfigService)
   private readonly configService: IGlobalConfigService;
 
-  @inject(TYPES.ILogService)
-  private readonly logger: ILogService;
+  @inject(TYPES.IMapService)
+  private readonly mapService: IMapService;
+
+  @inject(TYPES.IFontService)
+  private readonly fontService: IFontService;
 
   public apply(
     layer: ILayer,
@@ -69,7 +76,6 @@ export default class DataMappingPlugin implements ILayerPlugin {
             ),
           );
         }
-        this.logger.debug('remapping finished');
         // 处理文本更新
         layer.emit('remapping', null);
       }
@@ -99,21 +105,27 @@ export default class DataMappingPlugin implements ILayerPlugin {
     data: IParseDataItem[],
     predata?: IEncodeFeature[],
   ): IEncodeFeature[] {
-    return data.map((record: IParseDataItem, i) => {
+    // console.log('data', data)
+    const mappedData = data.map((record: IParseDataItem, i) => {
       const preRecord = predata ? predata[i] : {};
       const encodeRecord: IEncodeFeature = {
         id: record._id,
         coordinates: record.coordinates,
         ...preRecord,
       };
+      // console.log('attributes', attributes)
       attributes
         .filter((attribute) => attribute.scale !== undefined)
         .forEach((attribute: IStyleAttribute) => {
+          // console.log('attribute', attribute)
+          // console.log('record', record)
           let values = this.applyAttributeMapping(attribute, record);
+          // console.log('values', values)
           attribute.needRemapping = false;
 
           // TODO: 支持每个属性配置 postprocess
           if (attribute.name === 'color') {
+            // console.log('attribute', attribute)
             values = values.map((c: unknown) => {
               return rgb2arr(c as string);
             });
@@ -121,9 +133,51 @@ export default class DataMappingPlugin implements ILayerPlugin {
           // @ts-ignore
           encodeRecord[attribute.name] =
             Array.isArray(values) && values.length === 1 ? values[0] : values;
+
+          // 增加对 layer/text/iconfont unicode 映射的解析
+          if (attribute.name === 'shape') {
+            encodeRecord.shape = this.fontService.getIconFontKey(
+              encodeRecord[attribute.name] as string,
+            );
+          }
         });
       return encodeRecord;
     }) as IEncodeFeature[];
+    // console.log('mappedData', mappedData)
+
+    // 根据地图的类型判断是否需要对点位数据进行处理, 若是高德2.0则需要对坐标进行相对偏移
+    if (mappedData.length > 0 && this.mapService.version === 'GAODE2.x') {
+      if (typeof mappedData[0].coordinates[0] === 'number') {
+        // 单个的点数据
+        // @ts-ignore
+        mappedData
+          // TODO: 避免经纬度被重复计算导致坐标位置偏移
+          .filter((d) => !d.originCoordinates)
+          .map((d) => {
+            d.version = 'GAODE2.x';
+            // @ts-ignore
+            d.originCoordinates = cloneDeep(d.coordinates); // 为了兼容高德1.x 需要保存一份原始的经纬度坐标数据（许多上层逻辑依赖经纬度数据）
+            // @ts-ignore
+            d.coordinates = this.mapService.lngLatToCoord(d.coordinates);
+            // d.coordinates = this.mapService.lngLatToCoord(unProjectFlat(d.coordinates));
+          });
+      } else {
+        // 连续的线、面数据
+        // @ts-ignore
+        mappedData
+          // TODO: 避免经纬度被重复计算导致坐标位置偏移
+          .filter((d) => !d.originCoordinates)
+          .map((d) => {
+            d.version = 'GAODE2.x';
+            // @ts-ignore
+            d.originCoordinates = cloneDeep(d.coordinates); // 为了兼容高德1.x 需要保存一份原始的经纬度坐标数据（许多上层逻辑依赖经纬度数据）
+            // @ts-ignore
+            d.coordinates = this.mapService.lngLatToCoords(d.coordinates);
+          });
+      }
+    }
+    // console.log('mappedData', mappedData)
+    return mappedData;
   }
 
   private applyAttributeMapping(
@@ -145,6 +199,9 @@ export default class DataMappingPlugin implements ILayerPlugin {
         params.push(record[field]);
       }
     });
+    // console.log('params', params)
+    // console.log('attribute', attribute)
+    // console.log('mapping',attribute.mapping ? attribute.mapping(params) : [])
     return attribute.mapping ? attribute.mapping(params) : [];
   }
 }

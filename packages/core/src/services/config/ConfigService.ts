@@ -1,6 +1,7 @@
 // import Ajv from 'ajv';
 import { injectable, postConstruct } from 'inversify';
 import { merge } from 'lodash';
+import 'reflect-metadata';
 import { ILayerConfig } from '../layer/ILayerService';
 import { IRenderConfig } from '../renderer/IRendererService';
 import { IGlobalConfigService, ISceneConfig } from './IConfigService';
@@ -79,6 +80,7 @@ const defaultLayerConfig: Partial<ILayerConfig> = {
     duration: 4,
     trailLength: 0.15,
   },
+  forward: true, // 默认是正方向
 };
 
 // @see https://github.com/epoberezkin/ajv#options

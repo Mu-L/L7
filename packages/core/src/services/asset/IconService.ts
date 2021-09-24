@@ -1,5 +1,8 @@
+// @ts-ignore
+import TinySDF from '@mapbox/tiny-sdf';
 import { EventEmitter } from 'eventemitter3';
 import { inject, injectable } from 'inversify';
+import 'reflect-metadata';
 import { TYPES } from '../../types';
 import { buildIconMaping } from '../../utils/font_util';
 import { ITexture2D } from '../renderer/ITexture2D';
@@ -96,6 +99,9 @@ export default class IconService extends EventEmitter implements IIconService {
     }
   }
 
+  /**
+   * 将新增的 icon 图像存储到画布上（正方形）
+   */
   private updateIconAtlas() {
     this.canvas.width = MAX_CANVAS_WIDTH;
     this.canvas.height = this.canvasHeight;
@@ -117,6 +123,9 @@ export default class IconService extends EventEmitter implements IIconService {
     });
   }
 
+  /**
+   * 计算 icon 在画布上的排布（是否需要换行）
+   */
   private updateIconMap() {
     const { mapping, canvasHeight } = buildIconMaping(
       this.iconData,

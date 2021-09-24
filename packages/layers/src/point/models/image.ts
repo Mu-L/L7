@@ -6,16 +6,15 @@ import {
   IModelUniform,
   ITexture2D,
 } from '@antv/l7-core';
-
-import BaseModel from '../../core/BaseModel';
+import { isNumber } from 'lodash';
+import BaseModel, { styleOffset, styleSingle } from '../../core/BaseModel';
 import { PointImageTriangulation } from '../../core/triangulation';
 import pointImageFrag from '../shaders/image_frag.glsl';
 import pointImageVert from '../shaders/image_vert.glsl';
 interface IImageLayerStyleOptions {
-  opacity: number;
-  offsets: [number, number];
+  opacity: styleSingle;
+  offsets: styleOffset;
 }
-
 export default class ImageModel extends BaseModel {
   private texture: ITexture2D;
 
@@ -27,11 +26,57 @@ export default class ImageModel extends BaseModel {
     if (this.rendererService.getDirty()) {
       this.texture.bind();
     }
+
+    if (
+      this.dataTextureTest &&
+      this.dataTextureNeedUpdate({
+        opacity,
+        offsets,
+      })
+    ) {
+      this.judgeStyleAttributes({
+        opacity,
+        offsets,
+      });
+      const encodeData = this.layer.getEncodedData();
+      const { data, width, height } = this.calDataFrame(
+        this.cellLength,
+        encodeData,
+        this.cellProperties,
+      );
+      this.rowCount = height; // 当前数据纹理有多少行
+
+      this.dataTexture =
+        this.cellLength > 0 && data.length > 0
+          ? this.createTexture2D({
+              flipY: true,
+              data,
+              format: gl.LUMINANCE,
+              type: gl.FLOAT,
+              width,
+              height,
+            })
+          : this.createTexture2D({
+              flipY: true,
+              data: [1],
+              format: gl.LUMINANCE,
+              type: gl.FLOAT,
+              width: 1,
+              height: 1,
+            });
+    }
     return {
-      u_opacity: opacity || 1.0,
+      u_dataTexture: this.dataTexture, // 数据纹理 - 有数据映射的时候纹理中带数据，若没有任何数据映射时纹理是 [1]
+      u_cellTypeLayout: this.getCellTypeLayout(),
+
       u_texture: this.texture,
       u_textSize: [1024, this.iconService.canvasHeight || 128],
-      u_offsets: [-offsets[0], offsets[1]],
+      // u_opacity: opacity || 1.0,
+      // u_offsets: [-offsets[0], offsets[1]],
+      u_opacity: isNumber(opacity) ? opacity : 1.0,
+      u_offsets: this.isOffsetStatic(offsets)
+        ? (offsets as [number, number])
+        : [0, 0],
     };
   }
 
@@ -43,9 +88,8 @@ export default class ImageModel extends BaseModel {
   }
 
   public clearModels() {
-    if (this.texture) {
-      this.texture.destroy();
-    }
+    this.texture?.destroy();
+    this.dataTexture?.destroy();
     this.iconService.off('imageUpdate', this.updateTexture);
   }
 
@@ -108,7 +152,6 @@ export default class ImageModel extends BaseModel {
           attributeIdx: number,
         ) => {
           const iconMap = this.iconService.getIconMap();
-
           const { shape } = feature;
           const { x, y } = iconMap[shape as string] || { x: 0, y: 0 };
           return [x, y];
@@ -123,13 +166,15 @@ export default class ImageModel extends BaseModel {
       this.texture.update({
         data: this.iconService.getCanvas(),
       });
-      this.layer.render();
+      // this.layer.render();
+      // TODO: 更新完纹理后在更新的图层的时候需要更新所有的图层
+      this.layer.renderLayers();
       return;
     }
     this.texture = createTexture2D({
       data: this.iconService.getCanvas(),
-      mag: gl.NEAREST,
-      min: gl.NEAREST,
+      mag: gl.LINEAR,
+      min: gl.LINEAR,
       premultiplyAlpha: false,
       width: 1024,
       height: this.iconService.canvasHeight || 128,

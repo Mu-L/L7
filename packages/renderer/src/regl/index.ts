@@ -10,6 +10,7 @@ import {
   IClearOptions,
   IElements,
   IElementsInitializationOptions,
+  IExtensions,
   IFramebuffer,
   IFramebufferInitializationOptions,
   IModel,
@@ -21,7 +22,8 @@ import {
   ITexture2DInitializationOptions,
 } from '@antv/l7-core';
 import { injectable } from 'inversify';
-import regl from 'regl';
+import regl from 'l7regl';
+import 'reflect-metadata';
 import ReglAttribute from './ReglAttribute';
 import ReglBuffer from './ReglBuffer';
 import ReglElements from './ReglElements';
@@ -34,6 +36,7 @@ import ReglTexture2D from './ReglTexture2D';
  */
 @injectable()
 export default class ReglRendererService implements IRendererService {
+  public extensionObject: IExtensions;
   private gl: regl.Regl;
   private $container: HTMLDivElement | null;
   private canvas: HTMLCanvasElement;
@@ -77,10 +80,20 @@ export default class ReglRendererService implements IRendererService {
           if (err || !r) {
             reject(err);
           }
+          // @ts-ignore
           resolve(r);
         },
       });
     });
+
+    this.extensionObject = {
+      OES_texture_float: this.testExtension('OES_texture_float'),
+    };
+  }
+
+  public testExtension(name: string) {
+    // OES_texture_float
+    return !!this.getGLContext().getExtension(name);
   }
 
   public createModel = (options: IModelInitializationOptions): IModel =>

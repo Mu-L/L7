@@ -4,6 +4,7 @@ import { DOM } from '@antv/l7-utils';
 import elementResizeEvent, { unbind } from 'element-resize-event';
 import { EventEmitter } from 'eventemitter3';
 import { inject, injectable } from 'inversify';
+import 'reflect-metadata';
 import { TYPES } from '../../types';
 import { createRendererContainer } from '../../utils/dom';
 import { IFontService } from '../asset/IFontService';
@@ -21,7 +22,6 @@ import {
 } from '../interaction/IInteractionService';
 import { IPickingService } from '../interaction/IPickingService';
 import { ILayer, ILayerService } from '../layer/ILayerService';
-import { ILogService } from '../log/ILogService';
 import { IMapCamera, IMapConfig, IMapService } from '../map/IMapService';
 import { IRenderConfig, IRendererService } from '../renderer/IRendererService';
 import { IShaderModuleService } from '../shader/IShaderModuleService';
@@ -35,6 +35,10 @@ export default class Scene extends EventEmitter implements ISceneService {
   public destroyed: boolean = false;
 
   public loaded: boolean = false;
+  // loadFont 判断用户当前是否添加自定义字体
+  public loadFont: boolean = false;
+  // fontFamily 用户当前自己添加的字体的名称
+  public fontFamily: string = '';
 
   @inject(TYPES.SceneID)
   private readonly id: string;
@@ -49,9 +53,6 @@ export default class Scene extends EventEmitter implements ISceneService {
 
   @inject(TYPES.IControlService)
   private readonly controlService: IControlService;
-
-  @inject(TYPES.ILogService)
-  private readonly logger: ILogService;
 
   @inject(TYPES.IGlobalConfigService)
   private readonly configService: IGlobalConfigService;
@@ -139,15 +140,32 @@ export default class Scene extends EventEmitter implements ISceneService {
      */
     this.hooks.init.tapPromise('initMap', async () => {
       // 等待首次相机同步
-      await new Promise((resolve) => {
+      await new Promise<void>((resolve) => {
         this.map.onCameraChanged((viewport: IViewport) => {
           this.cameraService.init();
           this.cameraService.update(viewport);
-          resolve();
+          if (this.map.version !== 'GAODE2.x') {
+            // not amap2
+            resolve();
+          }
         });
-        this.map.init();
+
+        if (this.map.version !== 'GAODE2.x') {
+          // not amap2
+          this.map.init();
+        } else {
+          // amap2
+          resolve();
+        }
       });
+
+      if (this.map.version === 'GAODE2.x' && this.map.initViewPort) {
+        // amap2
+        await this.map.init();
+        this.map.initViewPort();
+      }
       // this.controlService.addControls();
+
       // 重新绑定非首次相机更新事件
       this.map.onCameraChanged(this.handleMapCameraChanged);
       this.map.addMarkerContainer();
@@ -162,7 +180,6 @@ export default class Scene extends EventEmitter implements ISceneService {
         InteractionEvent.Drag,
         this.addSceneEvent.bind(this),
       );
-      this.logger.debug(`map ${this.id} loaded`);
     });
 
     /**
@@ -187,6 +204,7 @@ export default class Scene extends EventEmitter implements ISceneService {
           this.canvas,
           this.configService.getSceneConfig(this.id) as IRenderConfig,
         );
+
         // this.initContainer();
         // window.addEventListener('resize', this.handleWindowResized);
         elementResizeEvent(
@@ -197,42 +215,42 @@ export default class Scene extends EventEmitter implements ISceneService {
           .matchMedia('screen and (-webkit-min-device-pixel-ratio: 1.5)')
           .addListener(this.handleWindowResized);
       } else {
-        this.logger.error('容器 id 不存在');
+        console.error('容器 id 不存在');
       }
       this.pickingService.init(this.id);
-
-      this.logger.debug(`scene ${this.id} renderer loaded`);
     });
     // TODO：init worker, fontAtlas...
 
     // 执行异步并行初始化任务
     // @ts-ignore
     this.initPromise = this.hooks.init.promise();
-
     this.render();
   }
 
   public addLayer(layer: ILayer) {
-    this.logger.debug(`add layer ${layer.name} to scene ${this.id}`);
     this.layerService.add(layer);
     this.render();
   }
 
-  public async render() {
+  public async render(renderType?: string) {
     if (this.rendering || this.destroyed) {
       return;
     }
-
     this.rendering = true;
     // 首次初始化，或者地图的容器被强制销毁的需要重新初始化
     if (!this.inited) {
       // 还未初始化完成需要等待
+
       await this.initPromise;
       if (this.destroyed) {
         this.destroy();
       }
+      // @ts-ignore
+      if (this.loadFont && document.fonts) {
+        // @ts-ignore
+        await document.fonts.load(`24px ${this.fontFamily}`, 'L7text');
+      }
       // FIXME: 初始化 marker 容器，可以放到 map 初始化方法中？
-      this.logger.info(' render inited');
       this.layerService.initLayers();
       this.controlService.addControls();
       this.loaded = true;
@@ -241,12 +259,30 @@ export default class Scene extends EventEmitter implements ISceneService {
     }
 
     // 尝试初始化未初始化的图层
-    this.layerService.renderLayers();
+    this.layerService.renderLayers(renderType);
+
     // 组件需要等待layer 初始化完成之后添加
-
-    this.logger.debug(`scene ${this.id} render`);
-
     this.rendering = false;
+  }
+
+  /**
+   * 用户自定义添加第三方字体 （用户使用 layer/point/text/iconfont 的前提需要加载第三方字体文件）
+   * @param fontFamily
+   * @param fontPath
+   */
+  public addFontFace(fontFamily: string, fontPath: string): void {
+    this.fontFamily = fontFamily;
+    const style = document.createElement('style');
+    style.type = 'text/css';
+    style.innerText = `
+        @font-face{
+            font-family: '${fontFamily}';
+            src: url('${fontPath}') format('woff2'),
+            url('${fontPath}') format('woff'),
+            url('${fontPath}') format('truetype');
+        }`;
+    document.getElementsByTagName('head')[0].appendChild(style);
+    this.loadFont = true;
   }
 
   public getSceneContainer(): HTMLDivElement {
@@ -297,6 +333,10 @@ export default class Scene extends EventEmitter implements ISceneService {
     this.interactionService.destroy();
     this.controlService.destroy();
     this.markerService.destroy();
+
+    // TODO: 销毁 container 容器
+    this.$container?.parentNode?.removeChild(this.$container);
+
     this.removeAllListeners();
     this.inited = false;
     unbind(this.$container as HTMLDivElement, this.handleWindowResized);
@@ -349,7 +389,7 @@ export default class Scene extends EventEmitter implements ISceneService {
 
   private handleMapCameraChanged = (viewport: IViewport) => {
     this.cameraService.update(viewport);
-    this.render();
+    this.render('mapRender');
   };
 
   private addSceneEvent(target: IInteractionTarget) {

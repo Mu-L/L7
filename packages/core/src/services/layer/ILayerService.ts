@@ -1,6 +1,7 @@
 // @ts-ignore
 import { SyncBailHook, SyncHook, SyncWaterfallHook } from '@antv/async-hook';
 import { Container } from 'inversify';
+import { AnimationMixer, Matrix4, Object3D } from 'three';
 import Clock from '../../utils/clock';
 import { ISceneConfig } from '../config/IConfigService';
 import { IMapService } from '../map/IMapService';
@@ -23,11 +24,18 @@ import {
   IScale,
   IScaleOptions,
   IStyleAttributeService,
+  IStyleAttributeUpdateOptions,
   ScaleAttributeType,
   StyleAttrField,
+  StyleAttributeField,
   StyleAttributeOption,
   Triangulation,
 } from './IStyleAttributeService';
+
+// import {
+//   IStyleAttributeUpdateOptions,
+//   StyleAttributeField,
+// } from '@antv/l7-core';y
 export enum BlendType {
   normal = 'normal',
   additive = 'additive',
@@ -51,7 +59,9 @@ export interface ILayerModelInitializationOptions {
   vertexShader: string;
   fragmentShader: string;
   triangulation: Triangulation;
+  segmentNumber?: number;
 }
+
 export interface ILayerModel {
   render(): void;
   getUninforms(): IModelUniform;
@@ -76,6 +86,8 @@ export interface IPickedFeature {
 export interface IActiveOption {
   color: string | number[];
 }
+
+type ILngLat = [number, number];
 
 export interface ILayer {
   id: string; // 一个场景中同一类型 Layer 可能存在多个
@@ -126,10 +138,17 @@ export interface ILayer {
     options: ILayerModelInitializationOptions &
       Partial<IModelInitializationOptions>,
   ): IModel;
+  updateStyleAttribute(
+    type: string,
+    field: StyleAttributeField,
+    values?: StyleAttributeOption,
+    updateOptions?: Partial<IStyleAttributeUpdateOptions>,
+  ): void;
   init(): ILayer;
   scale(field: string | number | IScaleOptions, cfg?: IScale): ILayer;
   size(field: StyleAttrField, value?: StyleAttributeOption): ILayer;
   color(field: StyleAttrField, value?: StyleAttributeOption): ILayer;
+  texture(field: StyleAttrField, value?: StyleAttributeOption): ILayer;
   shape(field: StyleAttrField, value?: StyleAttributeOption): ILayer;
   label(field: StyleAttrField, value?: StyleAttributeOption): ILayer;
   animate(option: Partial<IAnimateOption> | boolean): ILayer;
@@ -158,6 +177,7 @@ export interface ILayer {
   get(name: string): number;
   setBlend(type: keyof typeof BlendType): void;
   // animate(field: string, option: any): ILayer;
+  renderLayers(): void;
   render(): ILayer;
   clear(): void;
   clearModels(): void;
@@ -183,10 +203,7 @@ export interface ILayer {
   off(type: string, handler: (...args: any[]) => void): void;
   emit(type: string, handler: unknown): void;
   once(type: string, handler: (...args: any[]) => void): void;
-  /**
-   * JSON Schema 用于校验配置项
-   */
-  getConfigSchemaForValidation(): object;
+
   isDirty(): boolean;
   /**
    * 直接调用拾取方法，在非鼠标交互场景中使用
@@ -200,6 +217,50 @@ export interface ILayer {
   updateLayerConfig(configToUpdate: Partial<ILayerConfig | unknown>): void;
   setAnimateStartTime(): void;
   getLayerAnimateTime(): number;
+
+  /**
+   * threejs 适配兼容相关的方法
+   * @param lnglat
+   * @param altitude
+   * @param rotation
+   * @param scale
+   */
+
+  // 获取对应地图的经纬度模型矩阵
+  getModelMatrix?(
+    lnglat: ILngLat,
+    altitude: number,
+    rotation: [number, number, number],
+    scale: [number, number, number],
+  ): Matrix4;
+
+  // 获取对应地图的经纬度平移矩阵
+  getTranslateMatrix?(lnglat: ILngLat, altitude?: number): Matrix4;
+
+  // 设置模型对应地图在经纬度和高度方向的平移
+  applyObjectLngLat?(
+    object: Object3D,
+    lnglat: ILngLat,
+    altitude?: number,
+  ): void;
+
+  // 根据经纬度设置模型对应地图的平移
+  setObjectLngLat?(object: Object3D, lnglat: ILngLat, altitude?: number): void;
+
+  // 返回物体在场景中的经纬度
+  getObjectLngLat?(object: Object3D): ILngLat;
+
+  // 将经纬度转为 three 世界坐标
+  lnglatToCoord?(lnglat: ILngLat): ILngLat;
+
+  // 设置网格适配到地图坐标系
+  adjustMeshToMap?(object: Object3D): void;
+
+  // 设置网格的缩放 （主要是抹平 mapbox 底图时的差异，若是高德底图则可以直接设置网格的 scale 属性/方法）
+  setMeshScale?(object: Object3D, x: number, y: number, z: number): void;
+
+  // 增加加载模型的动画混合器
+  addAnimateMixer?(mixer: AnimationMixer): void;
 }
 
 /**
@@ -244,6 +305,8 @@ export interface ILayerConfig {
   enableMultiPassRenderer: boolean;
   passes: Array<string | [string, { [key: string]: unknown }]>;
 
+  forward: boolean; // 正方向
+
   /**
    * 开启拾取
    */
@@ -274,6 +337,10 @@ export interface ILayerConfig {
    */
   enableLighting: boolean;
   animateOption: Partial<IAnimateOption>;
+  /**
+   * layer point text 是否是 iconfont 模式
+   */
+  iconfont: boolean;
   onHover(pickedFeature: IPickedFeature): void;
   onClick(pickedFeature: IPickedFeature): void;
 }
@@ -294,6 +361,7 @@ export interface ILayerService {
   remove(layer: ILayer): void;
   removeAllLayers(): void;
   updateRenderOrder(): void;
-  renderLayers(): void;
+  renderLayers(type?: string): void;
+  getOESTextureFloat(): boolean;
   destroy(): void;
 }

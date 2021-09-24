@@ -30,8 +30,10 @@ export interface IMapWrapper {
 }
 
 export interface IMapService<RawMap = {}> {
+  version?: string;
   map: RawMap;
   init(): void;
+  initViewPort?(): void;
   destroy(): void;
   onCameraChanged(callback: (viewport: IViewport) => void): void;
   // init map
@@ -51,7 +53,7 @@ export interface IMapService<RawMap = {}> {
   // get map params
   getType(): string;
   getZoom(): number;
-  getCenter(): ILngLat;
+  getCenter(option?: ICameraOptions): ILngLat;
   getPitch(): number;
   getRotation(): number;
   getBounds(): Bounds;
@@ -66,7 +68,7 @@ export interface IMapService<RawMap = {}> {
   panBy(pixel: Point): void;
   fitBounds(bound: Bounds, fitBoundsOptions?: unknown): void;
   setZoomAndCenter(zoom: number, center: Point): void;
-  setCenter(center: [number, number]): void;
+  setCenter(center: [number, number], option?: ICameraOptions): void;
   setPitch(pitch: number): void;
   setZoom(zoom: number): void;
   setMapStyle(style: any): void;
@@ -85,6 +87,12 @@ export interface IMapService<RawMap = {}> {
     scale: [number, number, number],
     origin: IMercator,
   ): number[];
+  lngLatToCoord?(lnglat: [number, number]): [number, number];
+  lngLatToCoords?(
+    lnglatArray: number[][][] | number[][],
+  ): number[][][] | number[][] | number[][][] | number[][];
+  // lngLatToCoords?(lnglatArray: any): any;
+  getCustomCoordCenter?(): [number, number];
   exportMap(type: 'jpg' | 'png'): string;
 }
 
@@ -150,6 +158,8 @@ export interface IMapConfig<RawMap = {}> {
 
   offsetCoordinate?: boolean;
 
+  offsetZoom?: number;
+
   [key: string]: any;
 }
 
@@ -176,6 +186,20 @@ export interface IMapCamera {
   center: [number, number];
   // 相机高度
   cameraHeight: number;
+  cameraPosition?: [number, number, number];
+  up?: [number, number, number];
+  lookAt?: [number, number, number];
   // 偏移原点，例如 P20 坐标系下
   offsetOrigin: [number, number];
+}
+export interface ICameraOptions {
+  padding:
+    | number
+    | [number, number, number, number]
+    | {
+        top?: number;
+        bottom?: number;
+        right?: number;
+        left?: number;
+      };
 }

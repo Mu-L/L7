@@ -5,10 +5,10 @@ import AMapLoader from '@amap/amap-jsapi-loader';
 import {
   Bounds,
   CoordinateSystem,
+  ICameraOptions,
   ICoordinateSystemService,
   IGlobalConfigService,
   ILngLat,
-  ILogService,
   IMapConfig,
   IMapService,
   IMercator,
@@ -22,7 +22,10 @@ import {
 import { DOM } from '@antv/l7-utils';
 import { mat4, vec2, vec3 } from 'gl-matrix';
 import { inject, injectable } from 'inversify';
+import 'reflect-metadata';
 import { IAMapEvent, IAMapInstance } from '../../typings/index';
+import { toPaddingOptions } from '../utils';
+import { Version } from '../version';
 import './logo.css';
 import { MapTheme } from './theme';
 import Viewport from './Viewport';
@@ -52,6 +55,7 @@ const LNGLAT_OFFSET_ZOOM_THRESHOLD = 12; // 暂时关闭 fix 统一不同坐标�
 @injectable()
 export default class AMapService
   implements IMapService<AMap.Map & IAMapInstance> {
+  public version: string = Version['GAODE1.x'];
   /**
    * 原始地图实例
    */
@@ -59,9 +63,6 @@ export default class AMapService
 
   @inject(TYPES.IGlobalConfigService)
   private readonly configService: IGlobalConfigService;
-
-  @inject(TYPES.ILogService)
-  private readonly logger: ILogService;
 
   @inject(TYPES.MapConfig)
   private readonly config: Partial<IMapConfig>;
@@ -135,15 +136,45 @@ export default class AMapService
     return this.map.setZoom(zoom);
   }
 
-  public getCenter(): ILngLat {
+  public getCenter(options?: ICameraOptions): ILngLat {
+    if (options?.padding) {
+      const originCenter = this.getCenter();
+      const [w, h] = this.getSize();
+      const padding = toPaddingOptions(options.padding);
+      const px = this.lngLatToPixel([originCenter.lng, originCenter.lat]);
+      const offsetPx = [
+        (padding.right - padding.left) / 2,
+        (padding.bottom - padding.top) / 2,
+      ];
+
+      const newCenter = this.pixelToLngLat([
+        px.x - offsetPx[0],
+        px.y - offsetPx[1],
+      ]);
+      return newCenter;
+    }
     const center = this.map.getCenter();
     return {
       lng: center.getLng(),
       lat: center.getLat(),
     };
   }
-  public setCenter(lnglat: [number, number]): void {
-    this.map.setCenter(lnglat);
+  public setCenter(lnglat: [number, number], options?: ICameraOptions): void {
+    if (options?.padding) {
+      const padding = toPaddingOptions(options.padding);
+      const px = this.lngLatToPixel(lnglat);
+      const offsetPx = [
+        (padding.right - padding.left) / 2,
+        (padding.bottom - padding.top) / 2,
+      ];
+      const newCenter = this.pixelToLngLat([
+        px.x + offsetPx[0],
+        px.y + offsetPx[1],
+      ]);
+      this.map.setCenter([newCenter.lng, newCenter.lat]);
+    } else {
+      this.map.setCenter(lnglat);
+    }
   }
   public getPitch(): number {
     return this.map.getPitch();
@@ -244,6 +275,12 @@ export default class AMapService
     };
   }
 
+  public lngLatToCoord(lnglat: [number, number]): any {
+    // @ts-ignore
+    const { x, y } = this.map.lngLatToGeodeticCoord(lnglat);
+    return [x, -y];
+  }
+
   public lngLatToMercator(
     lnglat: [number, number],
     altitude: number,
@@ -296,7 +333,7 @@ export default class AMapService
     } = this.config;
     // 高德地图创建独立的container；
     // tslint:disable-next-line:typedef
-    await new Promise((resolve) => {
+    await new Promise<void>((resolve) => {
       const resolveMap = () => {
         if (mapInstance) {
           this.map = mapInstance as AMap.Map & IAMapInstance;
@@ -327,7 +364,7 @@ export default class AMapService
       };
       if (!amapLoaded && !mapInstance) {
         if (token === AMAP_API_KEY) {
-          this.logger.warn(this.configService.getSceneWarninfo('MapToken'));
+          console.warn(this.configService.getSceneWarninfo('MapToken'));
         }
         amapLoaded = true;
         plugin.push('Map3D');
@@ -380,6 +417,10 @@ export default class AMapService
 
   public destroy() {
     this.map.destroy();
+
+    // TODO: 销毁地图可视化层的容器
+    this.$mapContainer?.parentNode?.removeChild(this.$mapContainer);
+
     // @ts-ignore
     delete window.initAMap;
     const $jsapi = document.getElementById(AMAP_SCRIPT_ID);
@@ -410,6 +451,10 @@ export default class AMapService
     const { lng, lat } = this.getCenter();
     if (this.cameraChangedCallback) {
       // resync viewport
+      // console.log('cameraHeight', height)
+      // console.log('pitch', pitch)
+      // console.log('rotation', rotation)
+      // console.log('zoom', this.map.getZoom())
       this.viewport.syncWithMapCamera({
         aspect,
         // AMap 定义 rotation 为顺时针方向，而 Mapbox 为逆时针
@@ -425,9 +470,10 @@ export default class AMapService
         center: [lng, lat],
         offsetOrigin: [position.x, position.y],
       });
-
+      const { offsetZoom = LNGLAT_OFFSET_ZOOM_THRESHOLD } = this.config;
+      // console.log('this.viewport', this.viewport)
       // set coordinate system
-      if (this.viewport.getZoom() > LNGLAT_OFFSET_ZOOM_THRESHOLD) {
+      if (this.viewport.getZoom() > offsetZoom) {
         this.coordinateSystemService.setCoordinateSystem(
           CoordinateSystem.P20_OFFSET,
         );

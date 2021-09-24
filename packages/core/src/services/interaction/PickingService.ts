@@ -1,11 +1,8 @@
 import { decodePickingColor, DOM, encodePickingColor } from '@antv/l7-utils';
 import { inject, injectable } from 'inversify';
-import {
-  IMapService,
-  IRendererService,
-  IShaderModuleService,
-} from '../../index';
+import 'reflect-metadata';
 import { TYPES } from '../../types';
+import { isEventCrash } from '../../utils/dom';
 import { IGlobalConfigService, ISceneConfig } from '../config/IConfigService';
 import {
   IInteractionService,
@@ -16,6 +13,7 @@ import { ILayer, ILayerService } from '../layer/ILayerService';
 import { ILngLat } from '../map/IMapService';
 import { gl } from '../renderer/gl';
 import { IFramebuffer } from '../renderer/IFramebuffer';
+import { IRendererService } from '../renderer/IRendererService';
 import { IPickingService } from './IPickingService';
 
 @injectable()
@@ -147,7 +145,8 @@ export default class PickingService implements IPickingService {
     }
     this.alreadyInPicking = true;
     await this.pickingLayers(target);
-    this.layerService.renderLayers();
+    // TODO: 触发图层更新渲染，同时传递更新类型
+    this.layerService.renderLayers('picking');
     this.alreadyInPicking = false;
   }
 
@@ -322,6 +321,10 @@ export default class PickingService implements IPickingService {
     },
   ) {
     layer.emit(target.type, target);
+    // 判断是否发生事件冲突
+    if (isEventCrash(target)) {
+      layer.emit(target.type, target);
+    }
   }
 
   /**
@@ -341,11 +344,13 @@ export default class PickingService implements IPickingService {
     layer: ILayer,
     pickedColors: Uint8Array | undefined,
   ) {
+    // @ts-ignore
     const [r, g, b] = pickedColors;
     layer.hooks.beforeHighlight.call([r, g, b]);
   }
 
   private selectFeature(layer: ILayer, pickedColors: Uint8Array | undefined) {
+    // @ts-ignore
     const [r, g, b] = pickedColors;
     layer.hooks.beforeSelect.call([r, g, b]);
   }

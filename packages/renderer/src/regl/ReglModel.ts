@@ -6,8 +6,8 @@ import {
   IModelInitializationOptions,
   IUniform,
 } from '@antv/l7-core';
+import regl from 'l7regl';
 import { isPlainObject, isTypedArray } from 'lodash';
-import regl from 'regl';
 import {
   blendEquationMap,
   blendFuncMap,
@@ -124,7 +124,6 @@ export default class ReglModel implements IModel {
         | number[]
         | boolean;
     } = {};
-
     Object.keys(uniforms).forEach((uniformName: string) => {
       const type = typeof uniforms[uniformName];
       if (

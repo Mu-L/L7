@@ -42,11 +42,11 @@ scene.addLayer(layer);
 
 ### minZoom
 
-图层显示最小缩放等级，（0-18）   {number}  Mapbox （0-24） 高德 （3-18）
+图层显示最小缩放等级，（0-18）   {number}  Mapbox （0-24） 高德 （2-19）
 
 ### maxZoom
 
-图层显示最大缩放等级 （0-18）   {number}  Mapbox （0-24） 高德 （3-18）
+图层显示最大缩放等级 （0-18）   {number}  Mapbox （0-24） 高德 （2-19）
 
 ### autoFit
 
@@ -307,6 +307,62 @@ layer.style({
 });
 ```
 
+## 通用样式数据纹理映射
+
+从 L7 2.5 开始，各图层样式将逐步支持样式数据映射
+
+| layer 类型        | 支持的样式字段                                       | 备注                              |
+| ----------------- | ---------------------------------------------------- | --------------------------------- |
+| point/fill        | opacity、strokeOpacity、strokeWidth、stroke、offsets | shape circle、triangle...         |
+| point/image       | opacity、offsets                                     | offsets 经纬度偏移                |
+| point/normal      | opacity、offsets                                     |                                   |
+| point/text        | opacity、strokeWidth、stroke、textOffset             | textOffset 相对文字画布位置的偏移 |
+| point/extrude     | opacity                                              |                                   |
+| polygon/fill      | opacity                                              |                                   |
+| polygon/extrude   | opacity                                              |                                   |
+| line/line         | opacity                                              |                                   |
+| line/arc          | opacity                                              |                                   |
+| line/arc3d        | opacity                                              |                                   |
+| line/great_circle | opacity                                              |                                   |
+
+[DEMO 简单事例](../../../examples/point/scatter#scatterStyleMap)
+
+## 线图层纹理方法
+
+目前在线图层上单独加上了纹理方法的支持
+
+### 为图层绑定纹理
+
+```javascript
+// 首先在全局加载图片资源
+scene.addImage(
+  'plane',
+  'https://gw.alipayobjects.com/zos/bmw-prod/0ca1668e-38c2-4010-8568-b57cb33839b9.svg',
+);
+
+const layer = new LineLayer({
+  blend: 'normal',
+})
+  .source(data, {
+    parser: {
+      type: 'json',
+      x: 'lng1',
+      y: 'lat1',
+      x1: 'lng2',
+      y1: 'lat2',
+    },
+  })
+  .size(25)
+  .shape('arc')
+  .texture('plane') // 为图层绑定纹理
+  .color('#8C1EB2')
+  .style({
+    lineTexture: true, // 开启线的贴图功能
+    iconStep: 30, // 设置贴图纹理的间距
+    textureBlend: 'replace', // 设置纹理混合方式，默认值为 normal，可选值有 normal/replace 两种
+  });
+```
+
 ## 图层更新方法
 
 如果已经添加了图层，需要修改图层显示样式可以再次调用图形映射方法，然后调用 `scene.render()`更新渲染即可
@@ -542,6 +598,7 @@ layer.setSelect(id);
 
 ```javascript
 layer.on('click', (ev) => {}); // 鼠标左键点击图层事件
+layer.on('mouseenter', (ev) => {}); // 鼠标进入图层要素
 layer.on('mousemove', (ev) => {}); // 鼠标在图层上移动时触发
 layer.on('mouseout', (ev) => {}); // 鼠标移出图层要素时触发
 layer.on('mouseup', (ev) => {}); // 鼠标在图层上单击抬起时触发
@@ -589,3 +646,18 @@ layer.on('inited', (option) => {});
 
 - target 当前 layer
 - type 事件类型
+
+## 图层框选
+
+### boxSelect
+
+参数 option
+
+- box [x1: number, y1: number, x2: number, y2: number] 相较于
+- cb (...args: any[]) => void 传入的回调方法，返回框选内部的 feature
+
+```javascript
+layer.boxSelect(box, cb);
+// (x1, y1), (x2, y2) 框选的方框左上角和右下角相对于地图左上角的像素坐标
+// cb 是传入的回调函数，回调函数返回的参数是选中的 feature 对象数组，对象的字段和用户传入的数据相关
+```

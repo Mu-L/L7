@@ -6,11 +6,20 @@ module.exports = api => {
   const isCommonJS = api.env('cjs');
   const isESModule = api.env('esm');
   const isTest = api.env('test');
-
+ 
   if (isSite) {
     return {
       presets: [
-        'babel-preset-gatsby'
+        '@babel/preset-env',
+        [
+          '@babel/preset-react',
+          {
+            development: isCommonJS
+          }
+        ],
+        // 'babel-preset-gatsby', {
+        //   silence: true
+        // },
       ],
       plugins: [
         '@babel/plugin-proposal-optional-chaining',
@@ -81,7 +90,7 @@ module.exports = api => {
         '@babel/plugin-proposal-class-properties',
         {
           // @see https://github.com/storybookjs/storybook/issues/6069#issuecomment-472544973
-          loose: true
+          loose: false
         }
       ],
       '@babel/plugin-syntax-dynamic-import',
@@ -101,7 +110,8 @@ module.exports = api => {
         }
       ],
       isCDNBundle ? {} : [
-        'transform-import-styles'
+        'transform-import-css-l7'
+        // 'transform-import-styles' // babel 编译将样式打包到js
       ],
       [
         // @see https://github.com/babel/babel/issues/8741#issuecomment-509041135

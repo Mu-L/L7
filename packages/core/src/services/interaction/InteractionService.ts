@@ -1,16 +1,16 @@
 import EventEmitter from 'eventemitter3';
 import Hammer from 'hammerjs';
 import { inject, injectable } from 'inversify';
+import 'reflect-metadata';
 // @ts-ignore
 import { TYPES } from '../../types';
-import { ILogService } from '../log/ILogService';
 import { ILngLat, IMapService } from '../map/IMapService';
 import { IInteractionService, InteractionEvent } from './IInteractionService';
 const DragEventMap: { [key: string]: string } = {
   panstart: 'dragstart',
   panmove: 'dragging',
   panend: 'dragend',
-  pancancel: 'dragcancle',
+  pancancel: 'dragcancel',
 };
 /**
  * 由于目前 L7 与地图结合的方案为双 canvas 而非共享 WebGL Context，事件监听注册在地图底图上。
@@ -21,9 +21,6 @@ export default class InteractionService extends EventEmitter
   implements IInteractionService {
   @inject(TYPES.IMapService)
   private readonly mapService: IMapService;
-
-  @inject(TYPES.ILogService)
-  private readonly logger: ILogService;
 
   private hammertime: HammerManager;
 
@@ -91,7 +88,6 @@ export default class InteractionService extends EventEmitter
       this.hammertime = hammertime;
 
       // TODO: 根据场景注册事件到 L7 canvas 上
-      this.logger.debug('add event listeners on canvas');
     }
   }
   private removeEventListenerOnMap() {

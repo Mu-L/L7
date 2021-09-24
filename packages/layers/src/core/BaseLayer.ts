@@ -19,7 +19,6 @@ import {
   ILayerModelInitializationOptions,
   ILayerPlugin,
   ILayerService,
-  ILogService,
   IMapService,
   IModel,
   IModelInitializationOptions,
@@ -48,10 +47,9 @@ import { encodePickingColor } from '@antv/l7-utils';
 import { EventEmitter } from 'eventemitter3';
 import { Container } from 'inversify';
 import { isFunction, isObject } from 'lodash';
-// @ts-ignore
-import mergeJsonSchemas from 'merge-json-schemas';
 import { normalizePasses } from '../plugins/MultiPassRendererPlugin';
 import { BlendTypes } from '../utils/blend';
+import { handleStyleDataMapping } from '../utils/dataMappingStyle';
 import baseLayerSchema from './schema';
 /**
  * 分配 layer id
@@ -72,6 +70,7 @@ export default class BaseLayer<ChildLayerStyleOptions = {}> extends EventEmitter
   public pickedFeatureID: number | null = null;
   public selectedFeatureID: number | null = null;
   public styleNeedUpdate: boolean = false;
+  public rendering: boolean;
 
   public dataState: IDataState = {
     dataSourceNeedUpdate: false,
@@ -112,9 +111,6 @@ export default class BaseLayer<ChildLayerStyleOptions = {}> extends EventEmitter
   };
 
   public layerModel: ILayerModel;
-
-  @lazyInject(TYPES.ILogService)
-  protected readonly logger: ILogService;
 
   @lazyInject(TYPES.IGlobalConfigService)
   protected readonly configService: IGlobalConfigService;
@@ -206,6 +202,10 @@ export default class BaseLayer<ChildLayerStyleOptions = {}> extends EventEmitter
       };
     } else {
       const sceneId = this.container.get<string>(TYPES.SceneID);
+
+      // @ts-ignore
+      handleStyleDataMapping(configToUpdate, this); // 处理 style 中进行数据映射的属性字段
+
       this.configService.setLayerConfig(sceneId, this.id, {
         ...this.configService.getLayerConfig(this.id),
         ...this.needUpdateConfig,
@@ -229,7 +229,7 @@ export default class BaseLayer<ChildLayerStyleOptions = {}> extends EventEmitter
     return this.container;
   }
 
-  public addPlugin(plugin: ILayerPlugin) {
+  public addPlugin(plugin: ILayerPlugin): ILayer {
     // TODO: 控制插件注册顺序
     // @example:
     // pointLayer.addPlugin(new MyCustomPlugin(), {
@@ -375,6 +375,16 @@ export default class BaseLayer<ChildLayerStyleOptions = {}> extends EventEmitter
     return this;
   }
 
+  // 为对应的图层传入纹理的编号名称（point/image 在 shape 方法中传入纹理名称的方法并不通用）
+  public texture(
+    field: StyleAttributeField,
+    values?: StyleAttributeOption,
+    updateOptions?: Partial<IStyleAttributeUpdateOptions>,
+  ) {
+    this.updateStyleAttribute('texture', field, values, updateOptions);
+    return this;
+  }
+
   public rotate(
     field: StyleAttributeField,
     values?: StyleAttributeOption,
@@ -447,7 +457,6 @@ export default class BaseLayer<ChildLayerStyleOptions = {}> extends EventEmitter
     };
     return this;
   }
-
   public setData(data: any, options?: ISourceCFG) {
     if (this.inited) {
       this.layerSource.setData(data, options);
@@ -482,14 +491,13 @@ export default class BaseLayer<ChildLayerStyleOptions = {}> extends EventEmitter
       ...this.rawConfig,
       ...rest,
     };
-
     if (this.container) {
       this.updateLayerConfig(this.rawConfig);
       this.styleNeedUpdate = true;
     }
     return this;
   }
-  public scale(field: string | IScaleOptions, cfg: IScale) {
+  public scale(field: string | number | IScaleOptions, cfg?: IScale) {
     if (isObject(field)) {
       this.scaleOptions = {
         ...this.scaleOptions,
@@ -500,6 +508,18 @@ export default class BaseLayer<ChildLayerStyleOptions = {}> extends EventEmitter
     }
     return this;
   }
+
+  /**
+   * 渲染所有的图层
+   */
+  public renderLayers(): void {
+    this.rendering = true;
+
+    this.layerService.renderLayers();
+
+    this.rendering = false;
+  }
+
   public render(): ILayer {
     // if (
     //   this.needPick() &&
@@ -512,13 +532,18 @@ export default class BaseLayer<ChildLayerStyleOptions = {}> extends EventEmitter
     // } else {
     //   this.renderModels();
     // }
-    this.renderModels();
+    // TODO: this.getEncodedData().length !== 0 这个判断是为了解决在 2.5.x 引入数据纹理后产生的 空数据渲染导致 texture 超出上限问题
+    if (this.getEncodedData().length !== 0) {
+      this.renderModels();
+    }
+    // this.renderModels();
+
     // this.multiPassRenderer.render();
     // this.renderModels();
     return this;
   }
 
-  public active(options: IActiveOption) {
+  public active(options: IActiveOption | boolean) {
     const activeOption: Partial<ILayerConfig> = {};
     activeOption.enableHighlight = isObject(options) ? true : options;
     if (isObject(options)) {
@@ -759,9 +784,16 @@ export default class BaseLayer<ChildLayerStyleOptions = {}> extends EventEmitter
   }
 
   public setSource(source: Source) {
+    // 清除旧 sources 事件
+    if (this.layerSource) {
+      this.layerSource.off('update', this.sourceEvent);
+    }
+
     this.layerSource = source;
-    const zoom = this.mapService.getZoom();
-    if (this.layerSource.cluster) {
+
+    // 已 inited 且启用聚合进行更新聚合数据
+    if (this.inited && this.layerSource.cluster) {
+      const zoom = this.mapService.getZoom();
       this.layerSource.updateClusterData(zoom);
     }
     // source 可能会复用，会在其它layer被修改
@@ -780,18 +812,6 @@ export default class BaseLayer<ChildLayerStyleOptions = {}> extends EventEmitter
   }
   public getEncodedData() {
     return this.encodedData;
-  }
-
-  public getConfigSchemaForValidation() {
-    if (!this.configSchema) {
-      // 相比 allOf, merge 有一些优势
-      // @see https://github.com/goodeggs/merge-json-schemas
-      this.configSchema = mergeJsonSchemas([
-        baseLayerSchema,
-        this.getConfigSchema(),
-      ]);
-    }
-    return this.configSchema;
   }
   public getLegendItems(name: string): any {
     const scale = this.styleAttributeService.getLayerAttributeScale(name);
@@ -838,6 +858,7 @@ export default class BaseLayer<ChildLayerStyleOptions = {}> extends EventEmitter
       vertexShader,
       fragmentShader,
       triangulation,
+      segmentNumber,
       ...rest
     } = options;
     this.shaderModuleService.registerModule(moduleName, {
@@ -852,6 +873,7 @@ export default class BaseLayer<ChildLayerStyleOptions = {}> extends EventEmitter
     } = this.styleAttributeService.createAttributesAndIndices(
       this.encodedData,
       triangulation,
+      segmentNumber,
     );
     return createModel({
       attributes,
@@ -917,17 +939,54 @@ export default class BaseLayer<ChildLayerStyleOptions = {}> extends EventEmitter
   }
 
   public renderModels() {
-    if (this.layerModelNeedUpdate && this.layerModel) {
-      this.models = this.layerModel.buildModels();
-      this.hooks.beforeRender.call();
-      this.layerModelNeedUpdate = false;
-    }
-    this.models.forEach((model) => {
-      model.draw({
-        uniforms: this.layerModel.getUninforms(),
+    // TODO: this.getEncodedData().length > 0 这个判断是为了解决在 2.5.x 引入数据纹理后产生的 空数据渲染导致 texture 超出上限问题
+    if (this.getEncodedData().length > 0) {
+      if (this.layerModelNeedUpdate && this.layerModel) {
+        this.models = this.layerModel.buildModels();
+        this.hooks.beforeRender.call();
+        this.layerModelNeedUpdate = false;
+      }
+      this.models.forEach((model) => {
+        model.draw({
+          uniforms: this.layerModel.getUninforms(),
+        });
       });
-    });
+    }
     return this;
+  }
+
+  public updateStyleAttribute(
+    type: string,
+    field: StyleAttributeField,
+    values?: StyleAttributeOption,
+    updateOptions?: Partial<IStyleAttributeUpdateOptions>,
+  ) {
+    if (!this.inited) {
+      this.pendingStyleAttributes.push({
+        attributeName: type,
+        attributeField: field,
+        attributeValues: values,
+        updateOptions,
+      });
+    } else {
+      this.styleAttributeService.updateStyleAttribute(
+        type,
+        {
+          // @ts-ignore
+          scale: {
+            field,
+            ...this.splitValuesAndCallbackInAttribute(
+              // @ts-ignore
+              values,
+              // @ts-ignore
+              this.getLayerConfig()[field],
+            ),
+          },
+        },
+        // @ts-ignore
+        updateOptions,
+      );
+    }
   }
 
   protected getConfigSchema() {
@@ -967,39 +1026,5 @@ export default class BaseLayer<ChildLayerStyleOptions = {}> extends EventEmitter
         : valuesOrCallback || defaultValues,
       callback: isFunction(valuesOrCallback) ? valuesOrCallback : undefined,
     };
-  }
-
-  private updateStyleAttribute(
-    type: string,
-    field: StyleAttributeField,
-    values?: StyleAttributeOption,
-    updateOptions?: Partial<IStyleAttributeUpdateOptions>,
-  ) {
-    if (!this.inited) {
-      this.pendingStyleAttributes.push({
-        attributeName: type,
-        attributeField: field,
-        attributeValues: values,
-        updateOptions,
-      });
-    } else {
-      this.styleAttributeService.updateStyleAttribute(
-        type,
-        {
-          // @ts-ignore
-          scale: {
-            field,
-            ...this.splitValuesAndCallbackInAttribute(
-              // @ts-ignore
-              values,
-              // @ts-ignore
-              this.getLayerConfig()[field],
-            ),
-          },
-        },
-        // @ts-ignore
-        updateOptions,
-      );
-    }
   }
 }

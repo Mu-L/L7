@@ -3,6 +3,7 @@ import {
   Bounds,
   createLayerContainer,
   createSceneContainer,
+  ICameraOptions,
   IControl,
   IControlService,
   IFontService,
@@ -186,6 +187,29 @@ class Scene
   }
 
   // asset method
+  /**
+   * 为 layer/point/text 支持 iconfont 模式支持
+   * @param fontUnicode
+   * @param name
+   */
+  public addIconFont(name: string, fontUnicode: string): void {
+    this.fontService.addIconFont(name, fontUnicode);
+  }
+
+  public addIconFonts(options: string[][]): void {
+    options.forEach(([name, fontUnicode]) => {
+      this.fontService.addIconFont(name, fontUnicode);
+    });
+  }
+  /**
+   * 用户自定义添加第三方字体
+   * @param fontFamily
+   * @param fontPath
+   */
+  public addFontFace(fontFamily: string, fontPath: string): void {
+    this.sceneService.addFontFace(fontFamily, fontPath);
+  }
+
   public addImage(id: string, img: IImage) {
     this.iconService.addImage(id, img);
   }
@@ -242,6 +266,12 @@ class Scene
       : this.sceneService.on(type, handle);
   }
 
+  public once(type: string, handle: (...args: any[]) => void): void {
+    SceneEventList.indexOf(type) === -1
+      ? this.mapService.once(type, handle)
+      : this.sceneService.once(type, handle);
+  }
+
   public off(type: string, handle: (...args: any[]) => void): void {
     SceneEventList.indexOf(type) === -1
       ? this.mapService.off(type, handle)
@@ -254,12 +284,12 @@ class Scene
     return this.mapService.getZoom();
   }
 
-  public getCenter(): ILngLat {
-    return this.mapService.getCenter();
+  public getCenter(options?: ICameraOptions): ILngLat {
+    return this.mapService.getCenter(options);
   }
 
-  public setCenter(center: [number, number]) {
-    return this.mapService.setCenter(center);
+  public setCenter(center: [number, number], options?: ICameraOptions) {
+    return this.mapService.setCenter(center, options);
   }
 
   public getPitch(): number {
