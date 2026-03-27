@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
 /**
  * MapboxService
  */
@@ -131,6 +130,13 @@ export default class DefaultMapService extends BaseMapService<Map> {
 
   public exportMap(type: 'jpg' | 'png'): string {
     return '';
+  }
+
+  public setBgColor(color: string) {
+    this.bgColor = color;
+    if (this.$mapContainer) {
+      this.$mapContainer.style.backgroundColor = color;
+    }
   }
 
   public setMapStyle(style: any): void {}
